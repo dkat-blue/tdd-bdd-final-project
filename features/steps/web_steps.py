@@ -1,19 +1,3 @@
-######################################################################
-# Copyright 2016, 2021 John J. Rofrano. All Rights Reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# https://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-######################################################################
-
 # pylint: disable=function-redefined, missing-function-docstring
 # flake8: noqa
 """
@@ -32,13 +16,10 @@ from selenium.webdriver.support import expected_conditions
 
 ID_PREFIX = 'product_'
 
-
 @when('I visit the "Home Page"')
 def step_impl(context):
     """ Make a call to the base URL """
     context.driver.get(context.base_url)
-    # Uncomment next line to take a screenshot of the web page
-    # context.driver.save_screenshot('home_page.png')
 
 @then('I should see "{message}" in the title')
 def step_impl(context, message):
@@ -75,9 +56,6 @@ def step_impl(context, element_name):
     element = context.driver.find_element(By.ID, element_id)
     assert(element.get_attribute('value') == u'')
 
-##################################################################
-# These two function simulate copy and paste
-##################################################################
 @when('I copy the "{element_name}" field')
 def step_impl(context, element_name):
     element_id = ID_PREFIX + element_name.lower().replace(' ', '_')
@@ -95,23 +73,6 @@ def step_impl(context, element_name):
     )
     element.clear()
     element.send_keys(context.clipboard)
-
-##################################################################
-# This code works because of the following naming convention:
-# The buttons have an id in the html hat is the button text
-# in lowercase followed by '-btn' so the Clean button has an id of
-# id='clear-btn'. That allows us to lowercase the name and add '-btn'
-# to get the element id of any button
-##################################################################
-
-## UPDATE CODE HERE ##
-
-##################################################################
-# This code works because of the following naming convention:
-# The id field for text input in the html is the element name
-# prefixed by ID_PREFIX so the Name field has an id='pet_name'
-# We can then lowercase the name and prefix with pet_ to get the id
-##################################################################
 
 @then('I should see "{text_string}" in the "{element_name}" field')
 def step_impl(context, text_string, element_name):
@@ -132,3 +93,92 @@ def step_impl(context, element_name, text_string):
     )
     element.clear()
     element.send_keys(text_string)
+
+######################################################################
+# These functions are for button clicks
+######################################################################
+
+@when('I press the "{button}" button')
+def step_impl(context, button):
+    button_id = button.lower() + '-btn'
+    context.driver.find_element(By.ID, button_id).click()
+
+    # For search operations, wait for the table to be updated
+    if button.lower() == "search":
+        import time
+        time.sleep(2)  # Initial wait
+        
+        # Wait for table and contents
+        table = WebDriverWait(context.driver, context.wait_seconds).until(
+            expected_conditions.presence_of_element_located((By.CLASS_NAME, 'table'))
+        )
+        
+        # Wait for flash message to indicate search is complete
+        element = WebDriverWait(context.driver, context.wait_seconds).until(
+            expected_conditions.presence_of_element_located((By.ID, 'flash_message'))
+        )
+        
+        # Get table contents for debugging
+        rows = table.find_elements(By.TAG_NAME, 'tr')
+        logging.info('Found %d rows after search', len(rows))
+        for row in rows:
+            logging.info('Row content: [%s]', row.text)
+            
+        time.sleep(1)  # Final wait for any updates
+
+
+######################################################################
+# These functions are for verifying messages and results
+######################################################################
+
+@then('I should see the message "{message}"')
+def step_impl(context, message):
+    found = WebDriverWait(context.driver, context.wait_seconds).until(
+        expected_conditions.text_to_be_present_in_element(
+            (By.ID, 'flash_message'),
+            message
+        )
+    )
+    assert(found)
+
+@then('I should see "{name}" in the results')
+def step_impl(context, name):
+    # Log what we're looking for
+    logging.info('Looking for %s in search results', name)
+    
+    found = False
+    results_text = ""
+    
+    for i in range(3):  # Try a few times with a small delay
+        try:
+            # Get the search results element
+            element = context.driver.find_element(By.ID, 'search_results')
+            results_text = element.text
+            logging.info('Current results (attempt %d): [%s]', i+1, results_text)
+            
+            if name in results_text:
+                found = True
+                break
+                
+            # Get table structure info for debugging
+            table = context.driver.find_element(By.CLASS_NAME, 'table')
+            rows = table.find_elements(By.TAG_NAME, 'tr')
+            logging.info('Table has %d rows', len(rows))
+            for idx, row in enumerate(rows):
+                logging.info('Row %d contents: [%s]', idx, row.text)
+            
+            # If not found, wait a bit and try again
+            import time
+            time.sleep(1)
+            
+        except Exception as e:
+            logging.error("Error checking results (attempt %d): %s", i+1, str(e))
+            time.sleep(1)
+    
+    assert found, f"Could not find '{name}' in results after several attempts. Final results text was: [{results_text}]"
+
+
+@then('I should not see "{name}" in the results')
+def step_impl(context, name):
+    element = context.driver.find_element(By.ID, 'search_results')
+    assert(name not in element.text)
